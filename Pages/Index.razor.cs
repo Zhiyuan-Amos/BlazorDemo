@@ -22,7 +22,6 @@ public partial class Index
         sw.Start();
         
         _parents = await db.Parents
-            .Include(parent => parent.Children)
             .ToListAsync();
 
         _elapsed = sw.ElapsedMilliseconds;
