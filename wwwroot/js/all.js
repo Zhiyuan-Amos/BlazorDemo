@@ -1,23 +1,3 @@
-async function createParents(parents) {
-    const txn = (await db).transaction("parent", "readwrite");
-    const store = txn.store;
-
-    const tasks = [];
-    for (let i = 0; i < parents.length; i++) {
-        const task = store.add(parents[i]);
-        tasks.push(task);
-    }
-
-    await Promise.all([
-        tasks,
-        txn.done,
-    ]);
-}
-
-async function getParents() {
-    return (await db).transaction("parent").store.getAll();
-}
-
 async function exportDatabase(name) {
     const content = Module.FS.readFile(`/${name}`);
     const file = new File([content], name);
@@ -32,5 +12,36 @@ async function exportDatabase(name) {
 }
 
 async function deleteDatabase() {
-    window.indexedDB.deleteDatabase("Database");
+    window.indexedDB.deleteDatabase("SqliteStorage");
+}
+
+async function synchronizeFileWithIndexedDb(filename) {
+    return new Promise((res, rej) => {
+        const db = window.indexedDB.open("SqliteStorage", 1);
+        db.onupgradeneeded = () => {
+            db.result.createObjectStore("Files", {keypath: "id"});
+        };
+
+        db.onsuccess = () => {
+            const req = db.result.transaction("Files", "readonly").objectStore("Files").get("file");
+            req.onsuccess = () => {
+                Module.FS_createDataFile("/", filename, req.result, true, true, true);
+                res();
+            };
+        };
+
+        let lastModifiedTime = new Date();
+        setInterval(() => {
+                const path = `/${filename}`;
+                if (Module.FS.analyzePath(path).exists) {
+                    const mtime = Module.FS.stat(path).mtime;
+                    if (mtime.valueOf() !== lastModifiedTime.valueOf()) {
+                        lastModifiedTime = mtime;
+                        const data = Module.FS.readFile(path);
+                        db.result.transaction("Files", "readwrite").objectStore("Files").put(data, "file");
+                    }
+                }
+            },
+            1000);
+    });
 }
